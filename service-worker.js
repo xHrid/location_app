@@ -1,6 +1,5 @@
-const CACHE_NAME = 'cluster-map-cache-v1';
-
-const ASSETS_TO_CACHE = [
+const CACHE_NAME = 'cluster-map-cache-v3'; // Update version
+const CORE_ASSETS = [
   '/',
   '/index.html',
   '/strata.geojson',
@@ -304,14 +303,18 @@ const ASSETS_TO_CACHE = [
 
 ];
 
-self.addEventListener('install', event => {
+self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS_TO_CACHE))
+    caches.open(CACHE_NAME)
+      .then(cache => {
+        // Only cache core assets initially
+        return cache.addAll(CORE_ASSETS);
+      })
+      .then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
-self.addEventListener('activate', event => {
+self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then(keys => 
       Promise.all(keys.map(key => {
@@ -322,8 +325,25 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request).then(resp => resp || fetch(event.request))
-  );
+self.addEventListener('fetch', (event) => {
+  // Cache tiles dynamically
+  if (event.request.url.includes('/tiles/')) {
+    event.respondWith(
+      caches.match(event.request).then(response => {
+        // Return cached tile or fetch and cache
+        return response || fetch(event.request).then(fetchResponse => {
+          return caches.open(CACHE_NAME).then(cache => {
+            cache.put(event.request.url, fetchResponse.clone());
+            return fetchResponse;
+          });
+        });
+      }
+    ));
+} else {
+    // Cache-first strategy for other assets
+    event.respondWith(
+      caches.match(event.request)
+        .then(response => response || fetch(event.request))
+    );
+  }
 });

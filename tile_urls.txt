@@ -1,3 +1,13 @@
+const ASSETS_TO_CACHE = [
+  '/',
+  '/index.html',
+  '/strata.geojson',
+  '/clustered_points.geojson',
+  '/leaflet/leaflet.js',
+  '/leaflet/leaflet.css',
+  '/leaflet/images/marker-icon.png',
+  '/leaflet/images/marker-shadow.png',
+  '/libs/leaflet.geometryutil.js',
   '/tiles/13/5851/3417.png',
   '/tiles/13/5851/3418.png',
   '/tiles/13/5852/3417.png',
@@ -289,3 +299,5 @@
   '/tiles/17/93644/54693.png',
   '/tiles/17/93644/54694.png',
   '/tiles/18/187263/109363.png',
+
+];
