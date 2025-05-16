@@ -49,23 +49,41 @@
       });
 
     // Show current location
+    let currentMarker = null;
+    let currentCircle = null;
+    let firstLocationUpdate = true;
+
     function onLocationFound(e) {
-      const radius = e.accuracy / 2;
+        const radius = e.accuracy / 2;
 
-      L.marker(e.latlng).addTo(map)
-        .bindPopup("You are here").openPopup();
+        // Remove previous marker & circle
+        if (currentMarker) {
+        map.removeLayer(currentMarker);
+        }
+        if (currentCircle) {
+        map.removeLayer(currentCircle);
+        }
 
-      L.circle(e.latlng, radius).addTo(map);
+        // Add new marker & circle
+        currentMarker = L.marker(e.latlng).addTo(map).bindPopup("You are here");
+        currentCircle = L.circle(e.latlng, radius).addTo(map);
+
+        // Center the map ONLY on the first update
+        if (firstLocationUpdate) {
+        map.setView(e.latlng, 18);  // or keep your preferred zoom level
+        firstLocationUpdate = false;
+        }
     }
 
     function onLocationError(e) {
-      alert(e.message);
+        alert(e.message);
     }
 
     map.on('locationfound', onLocationFound);
     map.on('locationerror', onLocationError);
 
-    map.locate({ setView: true, maxZoom: 18, watch: true });
+    // Watch for location changes, but don't auto-center every time
+    map.locate({ watch: true, enableHighAccuracy: true });
   </script>
 </body>
 </html>
