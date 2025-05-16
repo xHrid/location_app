@@ -15,75 +15,93 @@
   </style>
 </head>
 <body>
-  <div id="map"></div>
+    <div id="map"></div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-geometryutil"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-geometryutil"></script>
 
-  <script>
-    const map = L.map('map').setView([28.5227, 77.1688], 17);  // Center on your site
+<script>
+  // 1. Initialize a placeholder map (center/origin ignored once strata loads)
+  const map = L.map('map').setView([0,0], 2);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 22,
-      attribution: '© OpenStreetMap contributors'
-    }).addTo(map);
+  // 2. Base tiles
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 22,
+    attribution: '© OpenStreetMap contributors',
+    noWrap: true            // prevents world-wrapping
+  }).addTo(map);
 
-    // Load GeoJSON
+  // 3. Load strata boundary and constrain map
+  fetch('strata.geojson')
+    .then(res => res.json())
+    .then(strataData => {
+      // Add boundary (invisible stroke or visible for debugging)
+      const strataLayer = L.geoJSON(strataData, {
+        style: { color: '#3388ff', weight: 2, fillOpacity: 0 } 
+      }).addTo(map);
+
+      // Compute bounds
+      const bounds = strataLayer.getBounds();
+
+      // Fit map to strata extent (with padding)
+      map.fitBounds(bounds, { padding: [20, 20] });
+
+      // Lock panning to strata
+      map.setMaxBounds(bounds);
+
+      // Prevent zooming out past strata
+      map.options.minZoom = map.getBoundsZoom(bounds);
+
+      // Now that map is framed, load clusters & location
+      loadClustersAndGeo();  
+    });
+
+  // 4. Function to load clusters and geolocation
+  function loadClustersAndGeo() {
+    // 4a. Cluster points
     fetch('clustered_points.geojson')
       .then(res => res.json())
       .then(data => {
-        const colors = ["red", "blue", "green", "orange", "purple", "brown"];
+        const colors = ["red","blue","green","orange","purple","brown"];
         L.geoJSON(data, {
-          pointToLayer: (feature, latlng) => {
-            const clusterId = feature.properties.cluster;
-            const color = colors[clusterId % colors.length];
+          pointToLayer: (feat, latlng) => {
+            const c = feat.properties.cluster;
             return L.circleMarker(latlng, {
               radius: 5,
-              fillColor: color,
-              color: "#000",
-              weight: 1,
-              fillOpacity: 0.8
+              fillColor: colors[c % colors.length],
+              color: "#000", weight: 1, fillOpacity: 0.8
             });
           }
         }).addTo(map);
       });
 
-    // Show current location
-    let currentMarker = null;
-    let currentCircle = null;
-    let firstLocationUpdate = true;
+    // 4b. Live location
+    let currentMarker = null, currentCircle = null, firstFix = true;
 
     function onLocationFound(e) {
-        const radius = e.accuracy / 2;
+      const r = e.accuracy / 2;
+      if (currentMarker) map.removeLayer(currentMarker);
+      if (currentCircle) map.removeLayer(currentCircle);
 
-        // Remove previous marker & circle
-        if (currentMarker) {
-        map.removeLayer(currentMarker);
-        }
-        if (currentCircle) {
-        map.removeLayer(currentCircle);
-        }
+      currentMarker = L.marker(e.latlng).addTo(map).bindPopup("You are here");
+      currentCircle = L.circle(e.latlng, r).addTo(map);
 
-        // Add new marker & circle
-        currentMarker = L.marker(e.latlng).addTo(map).bindPopup("You are here");
-        currentCircle = L.circle(e.latlng, radius).addTo(map);
-
-        // Center the map ONLY on the first update
-        if (firstLocationUpdate) {
-        map.setView(e.latlng, 18);  // or keep your preferred zoom level
-        firstLocationUpdate = false;
-        }
+      if (firstFix) {
+        map.setView(e.latlng, map.getZoom());
+        firstFix = false;
+      }
     }
 
     function onLocationError(e) {
-        alert(e.message);
+      alert("Location error: " + e.message);
     }
 
     map.on('locationfound', onLocationFound);
     map.on('locationerror', onLocationError);
-
-    // Watch for location changes, but don't auto-center every time
     map.locate({ watch: true, enableHighAccuracy: true });
-  </script>
+  }
+</script>
+
+
 </body>
 </html>
