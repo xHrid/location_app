@@ -1,107 +1,123 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Cluster Map Viewer</title>
+  <title>Cluster Map Viewer (Offline)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link 
-    rel="stylesheet" 
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
+
+  <!-- Leaflet CSS (local) -->
+  <link rel="stylesheet" href="leaflet/leaflet.css" />
+
   <style>
-    #map {
-      height: 100vh;
-      width: 100%;
-    }
+    #map { height: 100vh; width: 100%; }
   </style>
 </head>
 <body>
-    <div id="map"></div>
+  <div id="map"></div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet-geometryutil"></script>
+  <!-- Leaflet JS + Geometry Util (local) -->
+  <script src="leaflet/leaflet.js"></script>
+  <script src="libs/leaflet.geometryutil.js"></script>
 
-<script>
-  // 1. Initialize a placeholder map (center/origin ignored once strata loads)
-  const map = L.map('map').setView([0,0], 2);
+  <script>
+    // 1. Initialize map
+    const map = L.map('map').setView([0, 0], 2);
 
-  // 2. Base tiles
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 22,
-    attribution: '© OpenStreetMap contributors',
-    noWrap: true            // prevents world-wrapping
-  }).addTo(map);
+    // 2. Local tile layer with error handling
+    const tileLayer = L.tileLayer('./tiles/{z}/{x}/{y}.png', {
+      maxZoom: 22,
+      attribution: '© OpenStreetMap contributors',
+      noWrap: true,
+      // Show a default marker‐shadow image when a tile is missing
+      errorTileUrl: 'leaflet/images/marker-shadow.png'
+    })
+    .on('tileerror', (e) => {
+      console.warn(
+        `Failed to load tile z=${e.tile.coords.z}, x=${e.tile.coords.x}, y=${e.tile.coords.y}`,
+        e
+      );
+    })
+    .addTo(map);
 
-  // 3. Load strata boundary and constrain map
-  fetch('strata.geojson')
-    .then(res => res.json())
-    .then(strataData => {
-      // Add boundary (invisible stroke or visible for debugging)
-      const strataLayer = L.geoJSON(strataData, {
-        style: { color: '#3388ff', weight: 2, fillOpacity: 0 } 
-      }).addTo(map);
-
-      // Compute bounds
-      const bounds = strataLayer.getBounds();
-
-      // Fit map to strata extent (with padding)
-      map.fitBounds(bounds, { padding: [20, 20] });
-
-      // Lock panning to strata
-      map.setMaxBounds(bounds);
-
-      // Prevent zooming out past strata
-      map.options.minZoom = map.getBoundsZoom(bounds);
-
-      // Now that map is framed, load clusters & location
-      loadClustersAndGeo();  
-    });
-
-  // 4. Function to load clusters and geolocation
-  function loadClustersAndGeo() {
-    // 4a. Cluster points
-    fetch('clustered_points.geojson')
-      .then(res => res.json())
-      .then(data => {
-        const colors = ["red","blue","green","orange","purple","brown"];
-        L.geoJSON(data, {
-          pointToLayer: (feat, latlng) => {
-            const c = feat.properties.cluster;
-            return L.circleMarker(latlng, {
-              radius: 5,
-              fillColor: colors[c % colors.length],
-              color: "#000", weight: 1, fillOpacity: 0.8
-            });
-          }
+    // 3. Load strata boundary
+    fetch('strata.geojson')
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status} loading strata.geojson`);
+        return res.json();
+      })
+      .then(strataData => {
+        const strataLayer = L.geoJSON(strataData, {
+          style: { color: '#3388ff', weight: 2, fillOpacity: 0 }
         }).addTo(map);
+
+        const bounds = strataLayer.getBounds();
+        map.fitBounds(bounds, { padding: [20, 20] });
+        map.setMaxBounds(bounds);
+        map.options.minZoom = map.getBoundsZoom(bounds);
+
+        loadClustersAndGeo();
+      })
+      .catch(err => {
+        console.error('Error loading strata.geojson:', err);
+        alert('Failed to load boundary data. See console for details.');
       });
 
-    // 4b. Live location
-    let currentMarker = null, currentCircle = null, firstFix = true;
+    // 4. Load clusters & geolocation
+    function loadClustersAndGeo() {
+      // 4a. Cluster points
+      fetch('clustered_points.geojson')
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status} loading clustered_points.geojson`);
+          return res.json();
+        })
+        .then(data => {
+          const colors = ["red","blue","green","orange","purple","brown"];
+          L.geoJSON(data, {
+            pointToLayer: (feat, latlng) => {
+              const c = feat.properties.cluster;
+              return L.circleMarker(latlng, {
+                radius: 5,
+                fillColor: colors[c % colors.length],
+                color: "#000", weight: 1, fillOpacity: 0.8
+              });
+            }
+          }).addTo(map);
+        })
+        .catch(err => {
+          console.error('Error loading clustered_points.geojson:', err);
+          alert('Failed to load cluster data.');
+        });
 
-    function onLocationFound(e) {
-      const r = e.accuracy / 2;
-      if (currentMarker) map.removeLayer(currentMarker);
-      if (currentCircle) map.removeLayer(currentCircle);
+      // 4b. Live location with error UI
+      let currentMarker = null, currentCircle = null, firstFix = true;
 
-      currentMarker = L.marker(e.latlng).addTo(map).bindPopup("You are here");
-      currentCircle = L.circle(e.latlng, r).addTo(map);
+      map.on('locationfound', e => {
+        const r = e.accuracy / 2;
+        if (currentMarker) map.removeLayer(currentMarker);
+        if (currentCircle) map.removeLayer(currentCircle);
 
-      if (firstFix) {
-        map.setView(e.latlng, map.getZoom());
-        firstFix = false;
-      }
+        currentMarker = L.marker(e.latlng).addTo(map).bindPopup("You are here");
+        currentCircle = L.circle(e.latlng, r).addTo(map);
+
+        if (firstFix) {
+          map.setView(e.latlng, map.getZoom());
+          firstFix = false;
+        }
+      });
+
+      map.on('locationerror', e => {
+        console.error('Location error:', e.message);
+        alert(`Location unavailable: ${e.message}`);
+      });
+
+      map.locate({ watch: true, enableHighAccuracy: true });
     }
-
-    function onLocationError(e) {
-      alert("Location error: " + e.message);
-    }
-
-    map.on('locationfound', onLocationFound);
-    map.on('locationerror', onLocationError);
-    map.locate({ watch: true, enableHighAccuracy: true });
+  </script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/service-worker.js')
+      .then(reg => console.log('Service Worker registered', reg))
+      .catch(err => console.error('Service Worker registration failed:', err));
   }
 </script>
-
-
 </body>
 </html>
